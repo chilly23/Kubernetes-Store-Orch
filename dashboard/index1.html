@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Store Dashboard</title>
+</head>
+<body>2
+  <h1>Store Dashboard</h1>
+  <button onclick="createStore()">Create Store</button>
+  <ul id="list"></ul>
+
+  <script>
+    async function load() {
+      const res = await fetch("http://localhost:8000/stores");
+      const data = await res.json();
+      const ul = document.getElementById("list");
+      ul.innerHTML = "";
+      Object.values(data).forEach(s => {
+        const li = document.createElement("li");
+        li.innerHTML = `
+          ${s.id} - ${s.status} - 
+          <a href="${s.url}" target="_blank">${s.url}</a>
+          <button onclick="del('${s.id}')">Delete</button>
+        `;
+        ul.appendChild(li);
+      });
+    }
+
+    async function createStore() {
+      await fetch("http://localhost:8000/stores", { method: "POST" });
+      load();
+    }
+
+    async function del(id) {
+      await fetch("http://localhost:8000/stores/" + id, { method: "DELETE" });
+      load();
+    }
+
+    load();
+  </script>
+</body>
+</html>

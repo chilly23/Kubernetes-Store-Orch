@@ -1,0 +1,12 @@
+storeName: demo
+domain: demo.localhost
+
+mariadb:
+  image: mariadb:10.6
+  dbName: wordpress
+  user: wpuser
+  password: wppass
+  rootPassword: rootpass
+
+wordpress:
+  image: wordpress:php8.2-apache
