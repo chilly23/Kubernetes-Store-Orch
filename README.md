@@ -1,44 +1,79 @@
 # Kubernetes Store Orchestrator
 
-This is a small store provisioning platform that runs on local Kubernetes and also on a VPS using the same Helm charts. There is a Node backend that provisions stores, a React dashboard to control them, and a Helm chart that deploys WordPress + MariaDB per store in its own namespace.
+A prototype that provisions WordPress and MariaDB instances with Helm. An Express API manages releases, and React dashboards display store records.
 
-## Local setup
+## System design
 
-You need Docker, kubectl, Helm, and a local cluster like k3s, kind, k3d, or minikube. Make sure `kubectl get nodes` works.
+![Store provisioning and application traffic](docs/architecture.png)
 
-Set kubeconfig if you are on k3s:
+The API creates a store identifier and writes it to `backend/stores.json`.
+It then runs `helm install` with a namespace for that store.
+The chart contains WordPress, MariaDB, services, an ingress, a database secret, and a 2 GiB volume claim.
 
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+`Ready` means the Helm command returned successfully. The backend does not wait for pod readiness.
+WooCommerce is not installed by the chart. Install it through WordPress if you need commerce features.
 
-Start the backend: cd backend, npm install, node index.js
+## Repository map
 
+| Path | Responsibility |
+|---|---|
+| [backend/index.js](backend/index.js) | Express routes and Helm commands |
+| [backend/stores.json](backend/stores.json) | Local store records |
+| [dashboard-react](dashboard-react/) | React interface with a Vanta background |
+| [dashboard](dashboard/) | Earlier dashboard source |
+| [helm/store-chart](helm/store-chart/) | Kubernetes resource templates |
 
-This starts the API on http://localhost:3000
+## Current setup gaps
 
-Start the dashboard: cd dashboard-react, npm install, npm run dev
+The checked-in application is not ready for the original one-command setup:
 
+- `backend/package.json` is empty. The backend imports `express` and `uuid` and uses ES modules.
+- `dashboard-react/` has no root `index.html` entry file for Vite.
+- The React dashboard uses `http://localhost:3000`. The API does not configure CORS for a separate dashboard origin.
+- The chart creates a Namespace while the backend also uses Helm's `--create-namespace`. Review ownership before installing.
+- There is no separate production values file in this checkout.
 
-Open http://localhost:5173 :D
+Resolve these gaps before attempting an end-to-end deployment.
 
-## Production-like setup (VPS with k3s)
+## Inspect the chart
 
-Install k3s on the VPS. Copy this repo. Use the same Helm chart. Only change values like domain, ingress, and storage class in a values-prod.yaml. The flow stays the same. The backend still talks to the cluster and Helm still installs charts.
+Install Helm and kubectl. Use a disposable Kubernetes cluster with an ingress controller and a default storage class.
+Check access and render the manifests without creating resources:
 
-## How to create a store and place an order
+```sh
+kubectl get nodes
+helm lint helm/store-chart
+helm template demo helm/store-chart --set storeName=demo --set domain=demo.localhost
+```
 
-Open the dashboard at http://localhost:5173 and click Create Store.... The backend creates a namespace and installs the Helm chart. Wait until the store shows Ready. Open the store URL. Finish the WordPress setup, install WooCommerce, add a product, add it to cart, and checkout using a dummy or COD method. You can see the order in WooCommerce admin. To delete a store, use Delete in the dashboard and the namespace and all resources are removed.
+The chart defaults to MariaDB 10.6 and WordPress with PHP 8.2 and Apache.
+Replace the sample database passwords in your local values configuration before deployment.
+Configure local hostname resolution and the ingress controller for `*.localhost` store domains.
 
-## What is in this repo
+## API contracts
 
-There is a Node backend API, a React dashboard, and a Helm chart. The Helm chart includes WordPress, MariaDB, Services, Ingress, Secrets, and PVCs. There are separate values for local and production.
+| Method | Route | Behavior |
+|---|---|---|
+| GET | `/stores` | Read store records from JSON |
+| POST | `/stores` | Create a record and start Helm installation |
+| DELETE | `/stores/:id` | Start Helm uninstallation and namespace deletion |
 
-## System design and tradeoffs
+The backend expects its working directory to be `backend/`.
+It resolves both `stores.json` and `../helm/store-chart` relative to that directory.
 
-Each store runs in its own namespace for isolation and clean teardown. The backend is stateless and only orchestrates Helm, so it can scale horizontally. The database uses a PVC for persistence. Store creation is safe to retry at the namespace and Helm release level. If something fails, you can delete and recreate cleanly. For production, the main changes are DNS, ingress, storage class, and secret strategy. The charts stay the same and Helm handles upgrades and rollbacks.
+Deleting a store deletes its record before the external commands finish.
+The namespace deletion can delete the database volume claim. Storage reclaim policy determines the underlying volume's fate.
 
+## Limits
 
+State lives in one local JSON file. This implementation is not a stateless or horizontally synchronized service.
+It has no authentication, durable job queue, request idempotency, or health-based status reconciliation.
+The delete route passes the identifier into a shell command without validation. Keep this prototype off untrusted networks until the route checks identifiers.
+WordPress uploads do not have a persistent volume in the supplied chart.
 
+This documentation update does not provision a cluster or claim a successful deployment.
 
+## License
 
-
-
+[MIT](LICENSE) covers original source and documentation by Velan E.
+Container images and npm packages retain their own licenses. See [LICENSING.md](LICENSING.md).
